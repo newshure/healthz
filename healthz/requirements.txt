@@ -1,0 +1,19 @@
+# Python Health Check Application - Required Dependencies
+# 헬스체크 애플리케이션 필수 의존성 패키지
+
+# Web Framework - 웹 서버 프레임워크
+Flask==3.0.0              # 경량 웹 프레임워크
+Werkzeug==3.0.1          # Flask WSGI 유틸리티
+
+# System Monitoring - 시스템 모니터링
+psutil==5.9.6            # CPU, 메모리, 디스크 사용량 체크
+
+# Configuration - 설정 파일 처리
+PyYAML==6.0.1            # YAML 설정 파일 파싱
+
+# HTTP Client - HTTP 엔드포인트 체크용
+requests==2.31.0         # HTTP 요청 라이브러리
+urllib3==2.1.0           # HTTP 클라이언트 (SSL 검증 경고 제어용)
+
+# Production Server (Optional) - 프로덕션 서버 (선택사항)
+gunicorn==21.2.0         # WSGI HTTP 서버 (프로덕션 환경용)

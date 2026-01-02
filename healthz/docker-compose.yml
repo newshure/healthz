@@ -1,0 +1,86 @@
+# ============================================================
+# Docker Compose Configuration for Health Check Container
+# 헬스체크 컨테이너 Docker Compose 설정
+# ============================================================
+
+version: '3.8'
+
+services:
+  # Health Check Service - 헬스체크 서비스
+  healthz:
+    # Build Configuration - 빌드 설정
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    # Container Name - 컨테이너 이름
+    container_name: healthz-service
+    
+    # Image Name - 이미지 이름
+    image: healthz:latest
+    
+    # Ports Mapping - 포트 매핑 (호스트:컨테이너)
+    ports:
+      - "8080:8080"
+    
+    # Environment Variables - 환경 변수 (config.yaml 오버라이드)
+    environment:
+      # Server Configuration - 서버 설정
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      
+      # Logging Configuration - 로깅 설정
+      - LOG_CONSOLE_ENABLED=true
+      - LOG_CONSOLE_LEVEL=INFO
+      - LOG_FILE_ENABLED=true
+      - LOG_FILE_LEVEL=WARN
+      - LOG_FILE_DIR=/opt/healthz/logs
+      
+      # Check Configuration - 체크 설정 (예시)
+      # - CHECK_PORTS=8080,80
+      # - CHECK_PROCESS_NAMES=python,gunicorn
+    
+    # Volumes - 볼륨 마운트
+    volumes:
+      # Configuration File - 설정 파일 마운트
+      - ./config.yaml:/opt/healthz/config.yaml:ro
+      
+      # Log Directory - 로그 디렉토리 마운트
+      - ./logs:/opt/healthz/logs
+    
+    # Restart Policy - 재시작 정책
+    restart: unless-stopped
+    
+    # Health Check - 컨테이너 헬스체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Resource Limits - 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    # Networks - 네트워크
+    networks:
+      - healthz-network
+
+# Networks Definition - 네트워크 정의
+networks:
+  healthz-network:
+    driver: bridge
+    name: healthz-network
+
+# Volumes Definition - 볼륨 정의 (외부 영구 저장소)
+volumes:
+  healthz-logs:
+    driver: local
+    name: healthz-logs

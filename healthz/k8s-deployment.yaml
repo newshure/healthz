@@ -1,0 +1,268 @@
+# ============================================================
+# Kubernetes Deployment Configuration for Health Check Container
+# 헬스체크 컨테이너 Kubernetes 배포 설정
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: healthz-config
+  namespace: default
+  labels:
+    app: healthz
+data:
+  # Config.yaml 내용을 여기에 포함
+  config.yaml: |
+    # Server Configuration - 헬스체크 서버 설정
+    server:
+      host: 0.0.0.0
+      port: 8080
+      debug: false
+    
+    # Logging Configuration - 로깅 설정
+    logging:
+      console:
+        enabled: true
+        level: INFO
+      file:
+        enabled: true
+        level: WARN
+        directory: /opt/healthz/logs
+        filename_pattern: "healthz-{date}.log"
+        max_size_mb: 10
+        rotation: daily
+    
+    # Health Check Endpoints - 헬스체크 엔드포인트
+    endpoints:
+      health: /health
+      healthz: /healthz
+      livez: /livez
+      readyz: /readyz
+    
+    # Target Checks - 체크 대상 설정
+    checks:
+      ports:
+        enabled: true
+        targets: [8080, 80]
+        condition: any
+        timeout: 5
+      
+      processes:
+        enabled: true
+        targets: ["python", "gunicorn"]
+        condition: any
+        match_type: name
+      
+      http:
+        enabled: false
+        targets: []
+      
+      resources:
+        enabled: true
+        cpu:
+          enabled: true
+          threshold: 90
+        memory:
+          enabled: true
+          threshold: 85
+        disk:
+          enabled: true
+          threshold: 90
+          path: /
+    
+    # Timing Configuration - 타이밍 설정
+    timing:
+      initial_delay: 5
+      period: 10
+      timeout: 5
+      failure_threshold: 3
+      success_threshold: 1
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: healthz-deployment
+  namespace: default
+  labels:
+    app: healthz
+    version: v1.0.0
+spec:
+  # Replicas - 레플리카 수
+  replicas: 2
+  
+  # Selector - 파드 선택자
+  selector:
+    matchLabels:
+      app: healthz
+  
+  # Strategy - 배포 전략 (RollingUpdate)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  
+  # Pod Template - 파드 템플릿
+  template:
+    metadata:
+      labels:
+        app: healthz
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      # Security Context - 보안 컨텍스트
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      # Containers - 컨테이너 정의
+      containers:
+      - name: healthz
+        image: healthz:latest
+        imagePullPolicy: IfNotPresent
+        
+        # Ports - 포트 노출
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        
+        # Environment Variables - 환경 변수
+        env:
+        - name: SERVER_PORT
+          value: "8080"
+        - name: LOG_CONSOLE_LEVEL
+          value: "INFO"
+        - name: LOG_FILE_LEVEL
+          value: "WARN"
+        
+        # Volume Mounts - 볼륨 마운트
+        volumeMounts:
+        - name: config
+          mountPath: /opt/healthz/config.yaml
+          subPath: config.yaml
+          readOnly: true
+        - name: logs
+          mountPath: /opt/healthz/logs
+        
+        # Resource Limits - 리소스 제한
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        
+        # Liveness Probe - 생존 프로브 (컨테이너 재시작 판단)
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        
+        # Readiness Probe - 준비 프로브 (트래픽 수신 가능 판단)
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        
+        # Startup Probe - 시작 프로브 (느린 시작 컨테이너 보호)
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 30
+      
+      # Volumes - 볼륨 정의
+      volumes:
+      - name: config
+        configMap:
+          name: healthz-config
+          items:
+          - key: config.yaml
+            path: config.yaml
+      - name: logs
+        emptyDir: {}
+      
+      # Restart Policy - 재시작 정책
+      restartPolicy: Always
+      
+      # DNS Policy - DNS 정책
+      dnsPolicy: ClusterFirst
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: healthz-service
+  namespace: default
+  labels:
+    app: healthz
+spec:
+  # Service Type - 서비스 타입
+  type: ClusterIP
+  
+  # Selector - 파드 선택자
+  selector:
+    app: healthz
+  
+  # Ports - 포트 매핑
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+    targetPort: http
+  
+  # Session Affinity - 세션 어피니티
+  sessionAffinity: None
+
+---
+# Horizontal Pod Autoscaler (Optional) - 수평 파드 오토스케일러 (선택사항)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: healthz-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: healthz-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
